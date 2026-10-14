@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit Maker</title>
+<meta name="description" content="Build an orbit model in the browser and export it as a vector PDF.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' fill='%232f6df0'/><circle cx='16' cy='16' r='9' fill='%23ffffff'/><circle cx='16' cy='16' r='3.5' fill='%232f6df0'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>Orbit Maker</h1>
+  <p class="tag">Place what matters by closeness to the centre, pick a design, export a vector PDF.</p>
+</header>
+
+<main class="wrap">
+
+  <section id="panel" class="panel" aria-label="Controls">
+
+    <div class="block">
+      <label class="lab" for="modelSelect">Model</label>
+      <select id="modelSelect"></select>
+      <div class="btns">
+        <button type="button" data-act="new-model">New</button>
+        <button type="button" data-act="dup-model">Duplicate</button>
+        <button type="button" data-act="del-model">Delete</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>Content</h2>
+      <label class="lab" for="fTitle">Title</label>
+      <input id="fTitle" type="text" data-bind="title" maxlength="120" autocomplete="off">
+      <label class="lab" for="fSub">Subtitle</label>
+      <input id="fSub" type="text" data-bind="subtitle" maxlength="160" autocomplete="off">
+      <label class="lab" for="fCenter">Centre label</label>
+      <input id="fCenter" type="text" data-bind="center" maxlength="40" autocomplete="off">
+    </div>
+
+    <div class="block">
+      <h2>Design</h2>
+      <div id="designGrid" class="grid"></div>
+      <label class="lab">Orientation</label>
+      <div class="seg">
+        <button type="button" data-act="orient" data-v="portrait">Portrait</button>
+        <button type="button" data-act="orient" data-v="landscape">Landscape</button>
+      </div>
+      <label class="lab" for="fLabelSize">Label size <span id="labelSizeVal" class="val"></span></label>
+      <input id="fLabelSize" type="range" min="12" max="30" step="1" data-bind="labelSize">
+    </div>
+
+    <div class="block">
+      <h2>Rings</h2>
+      <p class="hint">Ring 1 is closest to the centre. Two to six rings.</p>
+      <div id="ringList" class="list"></div>
+      <button type="button" data-act="add-ring">Add ring</button>
+    </div>
+
+    <div class="block">
+      <h2>Groups</h2>
+      <p class="hint">Groups set the colour of each item.</p>
+      <div id="groupList" class="list"></div>
+      <button type="button" data-act="add-group">Add group</button>
+    </div>
+
+    <div class="block">
+      <h2>Items</h2>
+      <div class="addrow">
+        <input id="newLabel" type="text" placeholder="Item name" maxlength="60" autocomplete="off" aria-label="New item name">
+        <select id="newRing" aria-label="Ring for new item"></select>
+        <select id="newGroup" aria-label="Group for new item"></select>
+        <button type="button" data-act="add-item">Add</button>
+      </div>
+      <div id="itemList" class="list"></div>
+      <p class="hint">Drag an item in the preview to move it between rings.</p>
+    </div>
+
+    <div class="block">
+      <h2>Export</h2>
+      <label class="lab" for="paperSize">Paper size</label>
+      <select id="paperSize">
+        <option value="A4">A4</option>
+        <option value="A3">A3</option>
+        <option value="A2">A2</option>
+        <option value="A1">A1</option>
+        <option value="A0">A0</option>
+      </select>
+      <p id="exportInfo" class="hint"></p>
+      <button type="button" id="pdfBtn" class="primary" data-act="export-pdf">Download PDF</button>
+      <div class="btns">
+        <button type="button" data-act="export-json">Save backup</button>
+        <button type="button" data-act="import-json">Load backup</button>
+      </div>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+      <p class="hint">Your models are stored in this browser only.</p>
+    </div>
+
+  </section>
+
+  <section class="stage" aria-label="Preview">
+    <div id="sheet" class="sheet"></div>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

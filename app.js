@@ -1,0 +1,993 @@
+/* Orbit Maker
+   Vanilla JS, no build step. One SVG builder feeds both the preview and the PDF,
+   so what you see on screen is what gets printed. */
+
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------
+     constants
+     ------------------------------------------------------------------ */
+
+  var KEY = "orbit-maker:v1";
+
+  var SIZES = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+
+  var PALETTE = ["#e4572e", "#17a398", "#7b61ff", "#f5a623", "#2d9cdb", "#27ae60", "#eb5757", "#9b51e0"];
+
+  var MARGIN = 30;          /* page margin in page units, labels stay inside it */
+  var MIN_RINGS = 2;
+  var MAX_RINGS = 6;
+
+  /* Fonts must map to the built in PDF fonts for export. svg2pdf matches the
+     family against the jsPDF font list, which is lower case, so these names are
+     lower case too. The screen preview gets a fallback stack instead. */
+  var STACK = {
+    helvetica: "Helvetica, Arial, sans-serif",
+    times: "Times New Roman, Times, serif",
+    courier: "Courier New, Courier, monospace"
+  };
+
+  var THEMES = {
+    classic: {
+      name: "Classic",
+      bg: "#faf8f3",
+      bands: ["#e7dbc6", "#ece2d2", "#f1e9db", "#f5efe5", "#f8f4ec", "#fbf9f4"],
+      line: "#b9a98f", lineW: 1.2, dash: null,
+      text: "#2e2a24", muted: "#8a7f6d",
+      centerFill: "#2e2a24", centerText: "#faf8f3",
+      dot: "#faf8f3", spoke: null, font: "times"
+    },
+    midnight: {
+      name: "Midnight",
+      bg: "#0a0e1f",
+      bands: ["#1d2856", "#19234b", "#141c40", "#111735", "#0e122a", "#0a0e1f"],
+      line: "#7c8cf0", lineW: 1, dash: null,
+      text: "#e8ecff", muted: "#9aa6d8",
+      centerFill: "#f0c14b", centerText: "#1a1402",
+      dot: "#0a0e1f", spoke: "#2b3568", font: "helvetica"
+    },
+    blueprint: {
+      name: "Blueprint",
+      bg: "#0b4f9c",
+      bands: ["#1463bf", "#1260b8", "#105cb0", "#0f58a8", "#0d54a1", "#0c5099"],
+      line: "#ffffff", lineW: 1, dash: "6 6",
+      text: "#ffffff", muted: "#c3dbf6",
+      centerFill: "#ffffff", centerText: "#0b4f9c",
+      dot: "#0b4f9c", spoke: "#64a0da", font: "courier"
+    },
+    mono: {
+      name: "Mono",
+      bg: "#ffffff",
+      bands: ["#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff"],
+      line: "#000000", lineW: 1.6, dash: null,
+      text: "#000000", muted: "#6b6b6b",
+      centerFill: "#000000", centerText: "#ffffff",
+      dot: "#141414", spoke: "#cccccc", font: "helvetica"
+    },
+    pastel: {
+      name: "Pastel",
+      bg: "#ffffff",
+      bands: ["#ffd8e0", "#ffe7cd", "#fdf3c6", "#d7efd5", "#d1e7f7", "#e2dbf5"],
+      line: "#ffffff", lineW: 5, dash: null,
+      text: "#3a3a46", muted: "#7b7b8a",
+      centerFill: "#3a3a46", centerText: "#ffffff",
+      dot: "#ffffff", spoke: null, font: "helvetica"
+    },
+    solar: {
+      name: "Solar",
+      bg: "#fff3dc",
+      bands: ["#ef8a2c", "#f3a048", "#f6b56e", "#f9cc98", "#fcddbd", "#fff0da"],
+      line: "#ffffff", lineW: 1.5, dash: null,
+      text: "#4a2c0d", muted: "#8a5a22",
+      centerFill: "#4a2c0d", centerText: "#fff3dc",
+      dot: "#fff3dc", spoke: null, font: "times"
+    }
+  };
+
+  var DESIGN_KEYS = Object.keys(THEMES);
+
+  /* ------------------------------------------------------------------
+     small helpers
+     ------------------------------------------------------------------ */
+
+  function uid() {
+    return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function num(v, d) { var n = parseFloat(v); return isFinite(n) ? n : d; }
+  function r2(n) { return Math.round(n * 100) / 100; }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  }
+  function slug(s) {
+    var t = String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return t.slice(0, 48) || "orbit-model";
+  }
+  function str(v, d, max) { return typeof v === "string" ? v.slice(0, max) : d; }
+  function color(v, d) {
+    if (typeof v !== "string") return d;
+    var s = v.trim();
+    if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+    if (/^#[0-9a-f]{3}$/i.test(s)) return ("#" + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toLowerCase();
+    return d;
+  }
+  /* shortest signed distance between two angles in degrees */
+  function angDiff(a, b) { return ((a - b) % 360 + 540) % 360 - 180; }
+
+  /* Wrap to lines of at most max characters, at most maxLines, ASCII ellipsis. */
+  function wrapText(s, max, maxLines) {
+    var words = String(s == null ? "" : s).trim().split(/\s+/).filter(Boolean);
+    var out = [], line = "", i, w, test;
+    for (i = 0; i < words.length; i++) {
+      w = words[i];
+      while (w.length > max) {                       /* hard split a very long word */
+        if (line) { out.push(line); line = ""; }
+        out.push(w.slice(0, max));
+        w = w.slice(max);
+      }
+      if (!w) continue;
+      test = line ? line + " " + w : w;
+      if (test.length <= max) line = test;
+      else { if (line) out.push(line); line = w; }
+    }
+    if (line) out.push(line);
+    if (!out.length) return [];
+    if (maxLines && out.length > maxLines) {
+      var keep = out.slice(0, maxLines);
+      var last = keep[maxLines - 1];
+      if (last.length > max - 3) last = last.slice(0, Math.max(0, max - 3)).replace(/\s+$/, "");
+      keep[maxLines - 1] = last + "...";
+      return keep;
+    }
+    return out;
+  }
+
+  /* One text element per line, explicit x and y, no tspan, no baseline tricks. */
+  function tx(x, y, s, o) {
+    var a = '<text x="' + r2(x) + '" y="' + r2(y) + '" font-family="' + o.font +
+      '" font-size="' + o.size + '" fill="' + o.fill + '"';
+    if (o.anchor) a += ' text-anchor="' + o.anchor + '"';
+    if (o.weight) a += ' font-weight="' + o.weight + '"';
+    return a + ">" + esc(s) + "</text>";
+  }
+  /* A block of lines, centred vertically on yMid. */
+  function block(lines, x, yMid, lh, o) {
+    var out = [], top = yMid - ((lines.length - 1) * lh) / 2, i;
+    for (i = 0; i < lines.length; i++) out.push(tx(x, top + i * lh + o.size * 0.35, lines[i], o));
+    return out.join("");
+  }
+
+  /* ------------------------------------------------------------------
+     model
+     ------------------------------------------------------------------ */
+
+  function normalize(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var m = {};
+    m.id = (typeof raw.id === "string" && raw.id) ? raw.id : uid();
+    m.title = str(raw.title, "Untitled model", 120);
+    m.subtitle = str(raw.subtitle, "", 160);
+    m.center = str(raw.center, "Us", 40);
+    m.design = THEMES[raw.design] ? raw.design : "classic";
+    m.orientation = raw.orientation === "landscape" ? "landscape" : "portrait";
+    m.labelSize = Math.round(clamp(num(raw.labelSize, 18), 12, 30));
+
+    var rings = Array.isArray(raw.rings) ? raw.rings.map(function (r) { return str(r, "Ring", 40); }) : [];
+    if (rings.length < MIN_RINGS) rings = ["Core", "Active", "Casual", "Observers"];
+    m.rings = rings.slice(0, MAX_RINGS);
+
+    var groups = (Array.isArray(raw.groups) ? raw.groups : [])
+      .filter(function (g) { return g && typeof g === "object"; })
+      .map(function (g, i) {
+        return {
+          id: (typeof g.id === "string" && g.id) ? g.id : uid(),
+          name: str(g.name, "Group " + (i + 1), 40),
+          color: color(g.color, PALETTE[i % PALETTE.length])
+        };
+      });
+    if (!groups.length) groups = [{ id: uid(), name: "Group 1", color: PALETTE[0] }];
+    m.groups = groups;
+
+    var known = {};
+    groups.forEach(function (g) { known[g.id] = true; });
+    m.items = (Array.isArray(raw.items) ? raw.items : [])
+      .filter(function (it) { return it && typeof it === "object"; })
+      .map(function (it) {
+        return {
+          id: (typeof it.id === "string" && it.id) ? it.id : uid(),
+          label: str(it.label, "Item", 60),
+          ring: Math.round(clamp(num(it.ring, 0), 0, m.rings.length - 1)),
+          group: known[it.group] ? it.group : groups[0].id,
+          angle: ((num(it.angle, 0) % 360) + 360) % 360,
+          off: clamp(num(it.off, 0.5), 0, 1)
+        };
+      });
+    return m;
+  }
+
+  function freshIds(m) {
+    m.id = uid();
+    var map = {};
+    m.groups.forEach(function (g) { var old = g.id; g.id = uid(); map[old] = g.id; });
+    m.items.forEach(function (it) { it.id = uid(); it.group = map[it.group] || m.groups[0].id; });
+    return m;
+  }
+
+  function blank() {
+    return normalize({
+      title: "Untitled model",
+      subtitle: "",
+      center: "Us",
+      rings: ["Core", "Active", "Casual", "Observers"],
+      groups: [{ name: "Group 1", color: PALETTE[0] }],
+      items: []
+    });
+  }
+
+  function sample() {
+    var gs = [
+      { id: uid(), name: "Members", color: "#e4572e" },
+      { id: uid(), name: "Partners", color: "#17a398" },
+      { id: uid(), name: "Volunteers", color: "#7b61ff" }
+    ];
+    var m = {
+      id: uid(),
+      title: "Community Orbit Model",
+      subtitle: "Who is close, and who is drifting",
+      center: "Us",
+      design: "classic",
+      orientation: "portrait",
+      labelSize: 18,
+      rings: ["Core", "Active", "Casual", "Observers"],
+      groups: gs,
+      items: []
+    };
+    var seed = [
+      ["Founding team", 0, 0], ["Steering group", 0, 2],
+      ["Weekly regulars", 1, 0], ["Local partner org", 1, 1], ["Event hosts", 1, 2],
+      ["Newsletter readers", 2, 0], ["Funding body", 2, 1],
+      ["Lapsed members", 3, 0], ["Local press", 3, 1]
+    ];
+    seed.forEach(function (s) {
+      m.items.push({ id: uid(), label: s[0], ring: s[1], group: gs[s[2]].id, angle: pickAngle(m, s[1]), off: 0.5 });
+    });
+    return m;
+  }
+
+  /* Angle that sits furthest from the items already in that ring, skipping the
+     top axis where ring names are drawn. Ties are broken by moving away from the
+     items in the other rings too, which keeps their labels from stacking up. */
+  function pickAngle(model, ring) {
+    var same = [], other = [];
+    model.items.forEach(function (it) { (it.ring === ring ? same : other).push(it.angle); });
+    if (!same.length) return (ring * 47 + 30) % 360;
+
+    function nearest(a, list) {
+      var d = 180, i;
+      for (i = 0; i < list.length; i++) d = Math.min(d, Math.abs(angDiff(a, list[i])));
+      return d;
+    }
+    var cand = [], a, top = -1;
+    for (a = 0; a < 360; a += 3) {
+      if (Math.abs(angDiff(a, -90)) < 10) continue;
+      var d = nearest(a, same);
+      cand.push({ a: a, d: d });
+      if (d > top) top = d;
+    }
+    var best = null;
+    cand.forEach(function (c) {
+      if (c.d < top - 12) return;                /* near enough to the roomiest spot */
+      var o = nearest(c.a, other);
+      if (!best || o > best.o + 0.5 || (o > best.o - 0.5 && c.d > best.d)) best = { a: c.a, o: o, d: c.d };
+    });
+    return best ? best.a : 0;
+  }
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+
+  var state = { current: "", models: [] };
+  var paper = "A4";
+
+  function cur() {
+    var m = null, i;
+    for (i = 0; i < state.models.length; i++) if (state.models[i].id === state.current) m = state.models[i];
+    if (!m) { m = state.models[0] || null; if (m) state.current = m.id; }
+    return m;
+  }
+  function grp(m, id) {
+    for (var i = 0; i < m.groups.length; i++) if (m.groups[i].id === id) return m.groups[i];
+    return null;
+  }
+  function itm(m, id) {
+    for (var i = 0; i < m.items.length; i++) if (m.items[i].id === id) return m.items[i];
+    return null;
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage blocked, memory only */ }
+  }
+  function load() {
+    var raw = null, o, list;
+    try { raw = localStorage.getItem(KEY); } catch (e) { return false; }
+    if (!raw) return false;
+    try { o = JSON.parse(raw); } catch (e) { return false; }
+    if (!o || !Array.isArray(o.models)) return false;
+    list = o.models.map(normalize).filter(Boolean);
+    if (!list.length) return false;
+    state.models = list;
+    state.current = list[0].id;
+    for (var i = 0; i < list.length; i++) if (list[i].id === o.current) state.current = o.current;
+    return true;
+  }
+
+  /* ------------------------------------------------------------------
+     geometry
+     ------------------------------------------------------------------ */
+
+  function geom(model) {
+    return model.orientation === "landscape"
+      ? { W: 1414, H: 1000, cx: 950, cy: 500, R: 320, land: true }
+      : { W: 1000, H: 1414, cx: 500, cy: 745, R: 370, land: false };
+  }
+  function bands(model) {
+    var g = geom(model), n = model.rings.length, r0 = 0.17 * g.R;
+    return { r0: r0, bw: (g.R - r0) / n, n: n };
+  }
+  function bandColor(th, i, n) {
+    return n <= 1 ? th.bands[0] : th.bands[Math.round((i * 5) / (n - 1))];
+  }
+  function itemPos(g, model, it) {
+    var b = bands(model);
+    var r = b.r0 + b.bw * (clamp(it.ring, 0, b.n - 1) + clamp(it.off, 0, 1));
+    var a = (it.angle * Math.PI) / 180;
+    return { x: g.cx + r * Math.cos(a), y: g.cy + r * Math.sin(a) };
+  }
+
+  /* ------------------------------------------------------------------
+     the one SVG builder
+     ------------------------------------------------------------------ */
+
+  function buildSVG(model, screen) {
+    var th = THEMES[model.design] || THEMES.classic;
+    var font = screen ? (STACK[th.font] || STACK.helvetica) : th.font;
+    var g = geom(model);
+    var b = bands(model);
+    var p = [], i, k, a, r;
+
+    p.push('<rect x="0" y="0" width="' + g.W + '" height="' + g.H + '" fill="' + th.bg + '"/>');
+
+    /* ring bands, outermost first so inner bands sit on top */
+    for (i = b.n - 1; i >= 0; i--) {
+      r = b.r0 + (i + 1) * b.bw;
+      p.push('<circle cx="' + g.cx + '" cy="' + g.cy + '" r="' + r2(r) +
+        '" fill="' + bandColor(th, i, b.n) + '" stroke="' + th.line + '" stroke-width="' + th.lineW + '"' +
+        (th.dash ? ' stroke-dasharray="' + th.dash + '"' : "") + "/>");
+    }
+
+    /* spokes */
+    if (th.spoke) {
+      for (k = 0; k < 8; k++) {
+        a = (k * 45 * Math.PI) / 180;
+        p.push('<line x1="' + r2(g.cx + b.r0 * Math.cos(a)) + '" y1="' + r2(g.cy + b.r0 * Math.sin(a)) +
+          '" x2="' + r2(g.cx + g.R * Math.cos(a)) + '" y2="' + r2(g.cy + g.R * Math.sin(a)) +
+          '" stroke="' + th.spoke + '" stroke-width="1"/>');
+      }
+    }
+
+    /* centre disc */
+    p.push('<circle cx="' + g.cx + '" cy="' + g.cy + '" r="' + r2(b.r0) + '" fill="' + th.centerFill + '"/>');
+    /* Wrap near nine characters, but never split a word that would still fit,
+       and shrink the type instead so it stays inside the disc. */
+    var cwords = String(model.center || "").split(/\s+/);
+    var clong = 0;
+    cwords.forEach(function (w) { if (w.length > clong) clong = w.length; });
+    var cl = wrapText(model.center, clamp(clong, 9, 14), 3), cmax = 0, csize = 22;
+    cl.forEach(function (l) { if (l.length > cmax) cmax = l.length; });
+    if (cmax) csize = clamp((b.r0 * 1.75) / (cmax * 0.56), 11, 22);   /* keep it inside the disc */
+    csize = Math.round(csize * 10) / 10;
+    p.push(block(cl, g.cx, g.cy, csize * 1.18,
+      { size: csize, font: font, fill: th.centerText, anchor: "middle", weight: "bold" }));
+
+    /* ring names on the top axis, at each band middle */
+    for (i = 0; i < b.n; i++) {
+      r = b.r0 + (i + 0.5) * b.bw;
+      p.push(tx(g.cx, g.cy - r + 5, model.rings[i], { size: 14, font: font, fill: th.muted, anchor: "middle" }));
+    }
+
+    /* items */
+    var gcol = {};
+    model.groups.forEach(function (x) { gcol[x.id] = x.color; });
+
+    model.items.forEach(function (it) {
+      var pos = itemPos(g, model, it);
+      var col = gcol[it.group] || model.groups[0].color;
+      var ls = model.labelSize;
+      var lines = wrapText(it.label, 16, 3);
+      var maxc = 0, w, anchor, lx, s;
+      lines.forEach(function (l) { if (l.length > maxc) maxc = l.length; });
+      w = maxc * ls * 0.56;
+
+      anchor = pos.x >= g.cx ? "start" : "end";
+      lx = anchor === "start" ? pos.x + 16 : pos.x - 16;
+      if (anchor === "start" && lx + w > g.W - MARGIN) { anchor = "end"; lx = pos.x - 16; }
+      else if (anchor === "end" && lx - w < MARGIN) { anchor = "start"; lx = pos.x + 16; }
+
+      s = "";
+      if (screen) s += '<circle cx="' + r2(pos.x) + '" cy="' + r2(pos.y) + '" r="22" fill="none" pointer-events="all"/>';
+      s += '<circle cx="' + r2(pos.x) + '" cy="' + r2(pos.y) + '" r="10" fill="' + col +
+        '" stroke="' + th.dot + '" stroke-width="2.5"/>';
+      if (lines.length) {
+        s += block(lines, lx, pos.y, ls * 1.15, { size: ls, font: font, fill: th.text, anchor: anchor });
+      }
+      p.push(screen
+        ? '<g data-id="' + esc(it.id) + '" style="cursor:grab;touch-action:none">' + s + "</g>"
+        : "<g>" + s + "</g>");
+    });
+
+    /* header and legend */
+    p.push(g.land ? headLandscape(model, th, font, g) : headPortrait(model, th, font, g));
+
+    return '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 ' + g.W + " " + g.H +
+      '" width="' + g.W + '" height="' + g.H + '"' +
+      (screen ? ' preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:100%;touch-action:none"' : "") +
+      ">" + p.join("") + "</svg>";
+  }
+
+  function headPortrait(model, th, font, g) {
+    var p = [], t = wrapText(model.title, 30, 2), lh = 57, y = 105;
+    if (t.length) {
+      p.push(block(t, g.W / 2, y, lh, { size: 52, font: font, fill: th.text, anchor: "middle", weight: "bold" }));
+      y = y + ((t.length - 1) * lh) / 2 + 26;
+    }
+    var sub = wrapText(model.subtitle, 56, 2);
+    if (sub.length) {
+      p.push(block(sub, g.W / 2, y + 28 + ((sub.length - 1) * 29) / 2, 29,
+        { size: 24, font: font, fill: th.muted, anchor: "middle" }));
+    }
+    p.push(legend(model, th, font, { x: g.W / 2, bottom: g.H - 80, width: g.W - 120, center: true }));
+    return p.join("");
+  }
+
+  function headLandscape(model, th, font, g) {
+    var p = [], t = wrapText(model.title, 17, 4), lh = 48, y = 190, i;
+    for (i = 0; i < t.length; i++) {
+      p.push(tx(70, y + i * lh, t[i], { size: 44, font: font, fill: th.text, anchor: "start", weight: "bold" }));
+    }
+    if (t.length) y += (t.length - 1) * lh + 46;
+    var sub = wrapText(model.subtitle, 40, 3);
+    for (i = 0; i < sub.length; i++) {
+      p.push(tx(70, y + i * 27, sub[i], { size: 22, font: font, fill: th.muted, anchor: "start" }));
+    }
+    if (sub.length) y += (sub.length - 1) * 27 + 54;
+    p.push(legend(model, th, font, { x: 70, top: y, width: 440, center: false }));
+    return p.join("");
+  }
+
+  /* Swatch plus name, flowing into rows inside o.width. */
+  function legend(model, th, font, o) {
+    var size = 20, rowH = 34, gap = 26;
+    var rows = [], row = [], rw = 0, p = [];
+    model.groups.forEach(function (gr) {
+      var w = 28 + String(gr.name == null ? "" : gr.name).length * size * 0.56;
+      var need = row.length ? rw + gap + w : w;
+      if (row.length && need > o.width) { rows.push({ items: row, w: rw }); row = []; rw = w; }
+      else rw = need;
+      row.push({ g: gr, w: w });
+    });
+    if (row.length) rows.push({ items: row, w: rw });
+
+    var top = o.top != null ? o.top : o.bottom - rows.length * rowH;
+    rows.forEach(function (R, ri) {
+      var yc = top + ri * rowH + rowH / 2;
+      var x = o.center ? o.x - R.w / 2 : o.x;
+      R.items.forEach(function (e) {
+        p.push('<circle cx="' + r2(x + 9) + '" cy="' + r2(yc) + '" r="9" fill="' + e.g.color +
+          '" stroke="' + th.dot + '" stroke-width="2"/>');
+        p.push(tx(x + 28, yc + size * 0.35, e.g.name, { size: size, font: font, fill: th.text, anchor: "start" }));
+        x += e.w + gap;
+      });
+    });
+    return p.join("");
+  }
+
+  function thumb(th) {
+    return '<svg viewBox="0 0 60 60" width="60" height="60" aria-hidden="true">' +
+      '<rect x="0" y="0" width="60" height="60" fill="' + th.bg + '"/>' +
+      '<circle cx="30" cy="30" r="24" fill="' + th.bands[5] + '" stroke="' + th.line + '" stroke-width="1"/>' +
+      '<circle cx="30" cy="30" r="16" fill="' + th.bands[2] + '" stroke="' + th.line + '" stroke-width="1"/>' +
+      '<circle cx="30" cy="30" r="8" fill="' + th.centerFill + '"/></svg>';
+  }
+
+  /* ------------------------------------------------------------------
+     DOM
+     ------------------------------------------------------------------ */
+
+  function $(s) { return document.querySelector(s); }
+
+  var panel = $("#panel"), sheet = $("#sheet"), modelSelect = $("#modelSelect"),
+    designGrid = $("#designGrid"), ringList = $("#ringList"), groupList = $("#groupList"),
+    itemList = $("#itemList"), newLabel = $("#newLabel"), newRing = $("#newRing"),
+    newGroup = $("#newGroup"), paperSize = $("#paperSize"), exportInfo = $("#exportInfo"),
+    pdfBtn = $("#pdfBtn"), importFile = $("#importFile"), labelSizeVal = $("#labelSizeVal");
+
+  function renderPreview() {
+    var m = cur();
+    if (!m) return;
+    var g = geom(m);
+    sheet.style.setProperty("--ar", String(r2(g.W / g.H)));
+    sheet.innerHTML = buildSVG(m, true);
+    wireDrag(sheet.querySelector("svg"));
+  }
+
+  function ringOpts(m, sel) {
+    return m.rings.map(function (r, i) {
+      return '<option value="' + i + '"' + (i === sel ? " selected" : "") + ">" + (i + 1) + ". " + esc(r) + "</option>";
+    }).join("");
+  }
+  function groupOpts(m, sel) {
+    return m.groups.map(function (gr) {
+      return '<option value="' + esc(gr.id) + '"' + (gr.id === sel ? " selected" : "") + ">" + esc(gr.name) + "</option>";
+    }).join("");
+  }
+
+  function renderForm() {
+    var m = cur();
+    if (!m) return;
+
+    modelSelect.innerHTML = state.models.map(function (x) {
+      return '<option value="' + esc(x.id) + '"' + (x.id === m.id ? " selected" : "") + ">" +
+        esc(x.title || "Untitled model") + "</option>";
+    }).join("");
+
+    panel.querySelector('[data-bind="title"]').value = m.title;
+    panel.querySelector('[data-bind="subtitle"]').value = m.subtitle;
+    panel.querySelector('[data-bind="center"]').value = m.center;
+    panel.querySelector('[data-bind="labelSize"]').value = String(m.labelSize);
+    labelSizeVal.textContent = m.labelSize + " pt";
+
+    designGrid.innerHTML = DESIGN_KEYS.map(function (k) {
+      var th = THEMES[k];
+      return '<button type="button" class="design" data-act="design" data-v="' + k +
+        '" aria-pressed="' + (m.design === k ? "true" : "false") + '">' + thumb(th) +
+        "<span>" + esc(th.name) + "</span></button>";
+    }).join("");
+
+    Array.prototype.forEach.call(panel.querySelectorAll('.seg button[data-act="orient"]'), function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-v") === m.orientation ? "true" : "false");
+    });
+
+    ringList.innerHTML = m.rings.map(function (r, i) {
+      return '<div class="row ring"><span class="n">' + (i + 1) + "</span>" +
+        '<input type="text" value="' + esc(r) + '" data-f="ring" data-i="' + i +
+        '" maxlength="40" autocomplete="off" aria-label="Ring ' + (i + 1) + ' name">' +
+        '<button type="button" class="icon" data-act="del-ring" data-i="' + i +
+        '" aria-label="Delete ring ' + (i + 1) + '" title="Delete ring"' +
+        (m.rings.length <= MIN_RINGS ? " disabled" : "") + ">x</button></div>";
+    }).join("");
+
+    groupList.innerHTML = m.groups.map(function (gr) {
+      return '<div class="row group">' +
+        '<input type="color" value="' + esc(gr.color) + '" data-f="gcolor" data-id="' + esc(gr.id) +
+        '" aria-label="Colour for ' + esc(gr.name) + '">' +
+        '<input type="text" value="' + esc(gr.name) + '" data-f="gname" data-id="' + esc(gr.id) +
+        '" maxlength="40" autocomplete="off" aria-label="Group name">' +
+        '<button type="button" class="icon" data-act="del-group" data-id="' + esc(gr.id) +
+        '" aria-label="Delete group" title="Delete group"' +
+        (m.groups.length <= 1 ? " disabled" : "") + ">x</button></div>";
+    }).join("");
+
+    var kr = Math.round(num(newRing.value, 0));
+    if (!(kr >= 0 && kr < m.rings.length)) kr = 0;
+    var kg = newGroup.value;
+    if (!grp(m, kg)) kg = m.groups[0].id;
+    newRing.innerHTML = ringOpts(m, kr);
+    newGroup.innerHTML = groupOpts(m, kg);
+
+    itemList.innerHTML = m.items.length
+      ? m.items.map(function (it) {
+        return '<div class="row item">' +
+          '<input type="text" value="' + esc(it.label) + '" data-f="label" data-id="' + esc(it.id) +
+          '" maxlength="60" autocomplete="off" aria-label="Item name">' +
+          '<select data-f="iring" data-id="' + esc(it.id) + '" aria-label="Ring for ' + esc(it.label) + '">' +
+          ringOpts(m, it.ring) + "</select>" +
+          '<select data-f="igroup" data-id="' + esc(it.id) + '" aria-label="Group for ' + esc(it.label) + '">' +
+          groupOpts(m, it.group) + "</select>" +
+          '<button type="button" class="icon" data-act="del-item" data-id="' + esc(it.id) +
+          '" aria-label="Delete item" title="Delete item">x</button></div>';
+      }).join("")
+      : '<p class="hint">No items yet. Add one above.</p>';
+
+    panel.querySelector('[data-act="add-ring"]').disabled = m.rings.length >= MAX_RINGS;
+
+    updateExportInfo();
+  }
+
+  /* Ring and group names appear in the pickers too. Retitle the existing options
+     in place rather than rebuilding the form, which would drop focus mid typing
+     and pull the row out from under a pointer that is on its way to a button. */
+  function refreshOptions(m) {
+    Array.prototype.forEach.call(panel.querySelectorAll('#newRing, select[data-f="iring"]'), function (sel) {
+      for (var i = 0; i < sel.options.length && i < m.rings.length; i++) {
+        sel.options[i].textContent = (i + 1) + ". " + m.rings[i];
+      }
+    });
+    Array.prototype.forEach.call(panel.querySelectorAll('#newGroup, select[data-f="igroup"]'), function (sel) {
+      for (var i = 0; i < sel.options.length; i++) {
+        var gr = grp(m, sel.options[i].value);
+        if (gr) sel.options[i].textContent = gr.name;
+      }
+    });
+  }
+
+  function renderAll() { renderForm(); renderPreview(); }
+
+  function updateExportInfo() {
+    var m = cur();
+    if (!m) return;
+    var d = SIZES[paper] || SIZES.A4;
+    var land = m.orientation === "landscape";
+    exportInfo.textContent = paper + " " + (land ? "landscape" : "portrait") + ", " +
+      (land ? d[1] : d[0]) + " x " + (land ? d[0] : d[1]) + " mm";
+  }
+
+  /* ------------------------------------------------------------------
+     events
+     ------------------------------------------------------------------ */
+
+  function onInput(e) {
+    var t = e.target, m = cur();
+    if (!m || !t.getAttribute) return;
+    var bind = t.getAttribute("data-bind"), f, i, o, gr, it;
+
+    if (bind) {
+      if (bind === "labelSize") {
+        m.labelSize = Math.round(clamp(num(t.value, 18), 12, 30));
+        labelSizeVal.textContent = m.labelSize + " pt";
+      } else {
+        m[bind] = t.value;
+        if (bind === "title") {
+          o = modelSelect.options[modelSelect.selectedIndex];
+          if (o) o.textContent = t.value || "Untitled model";
+        }
+      }
+      save(); renderPreview();
+      return;
+    }
+
+    f = t.getAttribute("data-f");
+    if (!f) return;
+    if (f === "ring") {
+      i = Math.round(num(t.getAttribute("data-i"), -1));
+      if (i < 0 || i >= m.rings.length) return;
+      m.rings[i] = t.value;
+      refreshOptions(m);
+    } else if (f === "gname" || f === "gcolor") {
+      gr = grp(m, t.getAttribute("data-id"));
+      if (!gr) return;
+      if (f === "gname") { gr.name = t.value; refreshOptions(m); }
+      else gr.color = color(t.value, gr.color);
+    } else if (f === "label") {
+      it = itm(m, t.getAttribute("data-id"));
+      if (!it) return;
+      it.label = t.value;
+    } else return;
+    save(); renderPreview();
+  }
+
+  function onChange(e) {
+    var t = e.target, m = cur(), f, it;
+    if (t === modelSelect) { state.current = t.value; save(); renderAll(); return; }
+    if (t === paperSize) { paper = t.value; updateExportInfo(); return; }
+    if (t === importFile) { readImport(t.files && t.files[0]); t.value = ""; return; }
+    if (!m || !t.getAttribute) return;
+    f = t.getAttribute("data-f");
+    if (f === "iring") {
+      it = itm(m, t.getAttribute("data-id"));
+      if (it) { it.ring = Math.round(clamp(num(t.value, 0), 0, m.rings.length - 1)); save(); renderPreview(); }
+    } else if (f === "igroup") {
+      it = itm(m, t.getAttribute("data-id"));
+      if (it && grp(m, t.value)) { it.group = t.value; save(); renderPreview(); }
+    }
+  }
+
+  function onClick(e) {
+    var b = e.target.closest ? e.target.closest("[data-act]") : null;
+    if (!b || b.disabled) return;
+    var act = b.getAttribute("data-act"), m = cur(), i, id, x, gone, keep, used, n;
+
+    if (act === "new-model") {
+      x = blank(); state.models.push(x); state.current = x.id; save(); renderAll(); return;
+    }
+    if (!m) return;
+
+    switch (act) {
+      case "dup-model":
+        x = freshIds(normalize(JSON.parse(JSON.stringify(m))));
+        x.title = (m.title || "Untitled model") + " copy";
+        state.models.push(x); state.current = x.id;
+        save(); renderAll();
+        break;
+
+      case "del-model":
+        if (!window.confirm('Delete the model "' + (m.title || "Untitled model") + '"? This cannot be undone.')) return;
+        state.models = state.models.filter(function (y) { return y.id !== m.id; });
+        if (!state.models.length) state.models.push(blank());
+        state.current = state.models[0].id;
+        save(); renderAll();
+        break;
+
+      case "add-item":
+        addItem();
+        break;
+
+      case "add-ring":
+        if (m.rings.length >= MAX_RINGS) return;
+        m.rings.push("New ring");
+        save(); renderAll();
+        break;
+
+      case "add-group":
+        n = m.groups.length;
+        m.groups.push({ id: uid(), name: "Group " + (n + 1), color: PALETTE[n % PALETTE.length] });
+        save(); renderAll();
+        break;
+
+      case "del-ring":
+        if (m.rings.length <= MIN_RINGS) return;
+        i = Math.round(num(b.getAttribute("data-i"), -1));
+        if (i < 0 || i >= m.rings.length) return;
+        m.rings.splice(i, 1);
+        m.items.forEach(function (it) {
+          if (it.ring === i) it.ring = Math.max(0, i - 1);
+          else if (it.ring > i) it.ring -= 1;
+          it.ring = Math.round(clamp(it.ring, 0, m.rings.length - 1));
+        });
+        save(); renderAll();
+        break;
+
+      case "del-group":
+        if (m.groups.length <= 1) return;
+        id = b.getAttribute("data-id");
+        gone = grp(m, id);
+        if (!gone) return;
+        keep = m.groups.filter(function (y) { return y.id !== id; })[0];
+        used = m.items.some(function (it) { return it.group === id; });
+        if (used && !window.confirm('Delete the group "' + gone.name + '"? Its items move to "' + keep.name + '".')) return;
+        m.groups = m.groups.filter(function (y) { return y.id !== id; });
+        m.items.forEach(function (it) { if (it.group === id) it.group = keep.id; });
+        save(); renderAll();
+        break;
+
+      case "del-item":
+        id = b.getAttribute("data-id");
+        m.items = m.items.filter(function (it) { return it.id !== id; });
+        save(); renderAll();
+        break;
+
+      case "design":
+        if (!THEMES[b.getAttribute("data-v")]) return;
+        m.design = b.getAttribute("data-v");
+        save(); renderAll();
+        break;
+
+      case "orient":
+        m.orientation = b.getAttribute("data-v") === "landscape" ? "landscape" : "portrait";
+        save(); renderAll();
+        break;
+
+      case "export-pdf":
+        exportPDF();
+        break;
+
+      case "export-json":
+        exportJSON();
+        break;
+
+      case "import-json":
+        importFile.click();
+        break;
+    }
+  }
+
+  function addItem() {
+    var m = cur();
+    if (!m) return;
+    var label = (newLabel.value || "").trim();
+    if (!label) { newLabel.focus(); return; }
+    var ring = Math.round(clamp(num(newRing.value, 0), 0, m.rings.length - 1));
+    var gid = newGroup.value;
+    if (!grp(m, gid)) gid = m.groups[0].id;
+    m.items.push({ id: uid(), label: label.slice(0, 60), ring: ring, group: gid, angle: pickAngle(m, ring), off: 0.5 });
+    newLabel.value = "";
+    save(); renderAll();
+    newLabel.focus();
+  }
+
+  /* ------------------------------------------------------------------
+     dragging, on screen only
+     ------------------------------------------------------------------ */
+
+  var drag = null;
+
+  function toSvg(svg, cx, cy) {
+    var m = svg.getScreenCTM();
+    if (!m) return { x: 0, y: 0 };
+    var pt = svg.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    var q = pt.matrixTransform(m.inverse());
+    return { x: q.x, y: q.y };
+  }
+
+  function wireDrag(svg) {
+    if (!svg) return;
+
+    svg.addEventListener("pointerdown", function (e) {
+      var m = cur();
+      if (!m || !e.target.closest) return;
+      var node = e.target.closest("[data-id]");
+      if (!node) return;
+      var it = itm(m, node.getAttribute("data-id"));
+      if (!it) return;
+      drag = { id: it.id, node: node, base: itemPos(geom(m), m, it) };
+      node.style.cursor = "grabbing";
+      try { svg.setPointerCapture(e.pointerId); } catch (err) { /* older pointer support */ }
+      e.preventDefault();
+    });
+
+    svg.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      var m = cur();
+      if (!m) return;
+      var it = itm(m, drag.id);
+      if (!it) return;
+      var g = geom(m), b = bands(m);
+      var p = toSvg(svg, e.clientX, e.clientY);
+      var dx = p.x - g.cx, dy = p.y - g.cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1) it.angle = ((Math.atan2(dy, dx) * 180 / Math.PI) % 360 + 360) % 360;
+      var t = clamp((dist - b.r0) / (g.R - b.r0), 0, 0.999);
+      it.ring = Math.floor(t * b.n);
+      it.off = t * b.n - it.ring;
+      var np = itemPos(g, m, it);
+      drag.node.setAttribute("transform", "translate(" + r2(np.x - drag.base.x) + "," + r2(np.y - drag.base.y) + ")");
+      e.preventDefault();
+    });
+
+    function end(e) {
+      if (!drag) return;
+      try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+      drag = null;
+      save(); renderAll();
+    }
+    svg.addEventListener("pointerup", end);
+    svg.addEventListener("pointercancel", end);
+  }
+
+  /* ------------------------------------------------------------------
+     PDF export
+     ------------------------------------------------------------------ */
+
+  function exportPDF() {
+    var m = cur();
+    if (!m) return;
+    var ctor = window.jspdf && window.jspdf.jsPDF;
+    if (!ctor) {
+      window.alert("The PDF library did not load, so export is not available. Check your connection, or any script blocker, and reload the page.");
+      return;
+    }
+
+    var size = SIZES[paper] ? paper : "A4";
+    var d = SIZES[size];
+    var land = m.orientation === "landscape";
+    var pageW = land ? d[1] : d[0];
+    var pageH = land ? d[0] : d[1];
+    var g = geom(m);
+
+    var host = document.createElement("div");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "position:fixed;left:-99999px;top:0;width:" + g.W + "px;height:" + g.H + "px;";
+    host.innerHTML = buildSVG(m, false);
+    document.body.appendChild(host);
+
+    pdfBtn.disabled = true;
+    var was = pdfBtn.textContent;
+    pdfBtn.textContent = "Exporting...";
+
+    Promise.resolve().then(function () {
+      var el = host.querySelector("svg");
+      if (!el) throw new Error("the diagram could not be prepared");
+      el.setAttribute("width", String(g.W));
+      el.setAttribute("height", String(g.H));
+      var doc = new ctor({
+        orientation: land ? "landscape" : "portrait",
+        unit: "mm",
+        format: [Math.min(d[0], d[1]), Math.max(d[0], d[1])],
+        compress: true
+      });
+      if (typeof doc.svg !== "function") {
+        throw new Error("the SVG to PDF library did not load, check your connection or script blocker and reload");
+      }
+      return doc.svg(el, { x: 0, y: 0, width: pageW, height: pageH }).then(function () {
+        doc.setProperties({ title: m.title || "Orbit model", creator: "Orbit Maker" });
+        doc.save(slug(m.title) + "-" + size + ".pdf");
+      });
+    }).catch(function (err) {
+      window.alert("The PDF could not be created: " + (err && err.message ? err.message : String(err)));
+    }).then(function () {
+      host.parentNode && host.parentNode.removeChild(host);
+      pdfBtn.disabled = false;
+      pdfBtn.textContent = was;
+    });
+  }
+
+  /* ------------------------------------------------------------------
+     JSON backup
+     ------------------------------------------------------------------ */
+
+  function exportJSON() {
+    try {
+      var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "orbit-maker-backup.json";
+      document.body.appendChild(a);
+      a.click();
+      a.parentNode.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    } catch (e) {
+      window.alert("The backup file could not be created in this browser.");
+    }
+  }
+
+  function readImport(file) {
+    if (!file) return;
+    var fr = new FileReader();
+    fr.onerror = function () { window.alert("That file could not be read."); };
+    fr.onload = function () {
+      var o = null, list, ok, added;
+      try { o = JSON.parse(String(fr.result)); } catch (e) { o = null; }
+      list = (o && Array.isArray(o.models)) ? o.models : (Array.isArray(o) ? o : null);
+      ok = list && list.length && list.every(function (x) {
+        return x && typeof x === "object" && Array.isArray(x.rings) && Array.isArray(x.groups) && Array.isArray(x.items);
+      });
+      if (!ok) { window.alert("That does not look like an Orbit Maker backup file."); return; }
+      added = list.map(function (x) {
+        var m = normalize(x);
+        return m ? freshIds(m) : null;
+      }).filter(Boolean);
+      if (!added.length) { window.alert("That does not look like an Orbit Maker backup file."); return; }
+      state.models = state.models.concat(added);
+      state.current = added[0].id;
+      save(); renderAll();
+    };
+    fr.readAsText(file);
+  }
+
+  /* ------------------------------------------------------------------
+     start
+     ------------------------------------------------------------------ */
+
+  function init() {
+    if (!panel || !sheet) return;
+    if (!load()) {
+      state.models = [sample()];
+      state.current = state.models[0].id;
+      save();
+    }
+    panel.addEventListener("click", onClick);
+    panel.addEventListener("input", onInput);
+    panel.addEventListener("change", onChange);
+    newLabel.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); addItem(); }
+    });
+    paperSize.value = paper;
+    renderAll();
+  }
+
+  init();
+}());
