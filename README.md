@@ -1,8 +1,33 @@
-# Orbit Maker
+<h1 align="center">Orbit Maker</h1>
 
-A small browser tool for building orbit models: a focus at the centre, concentric
-rings for how close something is, and items placed in those rings and coloured by
-group. Pick a design, then export a vector PDF in A4, A3, A2, A1 or A0.
+<p align="center">
+  A browser tool for building orbit models: a focus at the centre, concentric rings
+  for how close something is, and items placed in those rings and coloured by group.
+  <br>
+  Pick a design, then export a vector PDF in A4, A3, A2, A1 or A0.
+</p>
+
+<p align="center">
+  <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?style=plastic&logo=html5&logoColor=white">
+  <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?style=plastic&logo=css3&logoColor=white">
+  <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-F7DF1E?style=plastic&logo=javascript&logoColor=black">
+  <img alt="Vanilla JS, no framework" src="https://img.shields.io/badge/framework-none-4c1?style=plastic">
+  <img alt="No build step" src="https://img.shields.io/badge/build%20step-none-4c1?style=plastic">
+</p>
+
+<p align="center">
+  <img alt="jsPDF 2.5.1" src="https://img.shields.io/badge/jsPDF-2.5.1-c7254e?style=plastic">
+  <img alt="svg2pdf.js 2.2.4" src="https://img.shields.io/badge/svg2pdf.js-2.2.4-6e4c9e?style=plastic">
+  <img alt="SVG" src="https://img.shields.io/badge/SVG-FFB13B?style=plastic&logo=svg&logoColor=black">
+  <img alt="Output is vector PDF" src="https://img.shields.io/badge/output-vector%20PDF-informational?style=plastic">
+  <img alt="Paper sizes A4 to A0" src="https://img.shields.io/badge/paper-A4%20to%20A0-informational?style=plastic">
+</p>
+
+<p align="center">
+  <img alt="Runs entirely in the browser" src="https://img.shields.io/badge/backend-none-4c1?style=plastic">
+  <img alt="Data stored in localStorage" src="https://img.shields.io/badge/storage-localStorage-blue?style=plastic">
+  <img alt="Deployed on GitHub Pages" src="https://img.shields.io/badge/GitHub%20Pages-222222?style=plastic&logo=githubpages&logoColor=white">
+</p>
 
 No backend, no build step, no accounts. One HTML file, one stylesheet, one script.
 
