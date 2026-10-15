@@ -85,6 +85,13 @@ button.primary:hover:not(:disabled){ background:#2a61d8; border-color:#2a61d8; }
 .btns button{ flex:1 1 auto; }
 .menuwrap{ position:relative; flex:1 1 auto; display:flex; }
 .menuwrap > button{ width:100%; }
+/* a caret, so a button that opens a menu looks like one */
+button.hasmenu::after{
+  content:""; display:inline-block; margin-left:7px; vertical-align:2px;
+  border:4px solid transparent; border-top-color:currentColor; border-bottom-width:0;
+}
+button.hasmenu[aria-expanded=true]{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+button.hasmenu[aria-expanded=true]::after{ vertical-align:1px; border-top-width:0; border-bottom-width:4px; border-bottom-color:currentColor; }
 .menu{
   position:absolute; z-index:20; top:calc(100% + 5px); left:0; min-width:292px; max-width:320px;
   padding:5px; background:#fff; border:1px solid var(--line); border-radius:9px;

@@ -20,16 +20,17 @@
   <section id="panel" class="panel" aria-label="Controls">
 
     <div class="block">
-      <label class="lab" for="modelSelect">Model</label>
+      <label class="lab" for="modelSelect">Your saved models</label>
       <select id="modelSelect"></select>
       <div class="btns">
         <div class="menuwrap">
-          <button type="button" id="newBtn" data-act="new-menu" aria-haspopup="true" aria-expanded="false" aria-controls="newMenu">New</button>
+          <button type="button" id="newBtn" class="hasmenu" data-act="new-menu" aria-haspopup="true" aria-expanded="false" aria-controls="newMenu">New</button>
           <div id="newMenu" class="menu" role="menu" aria-labelledby="newBtn" hidden></div>
         </div>
         <button type="button" data-act="dup-model">Duplicate</button>
         <button type="button" data-act="del-model">Delete</button>
       </div>
+      <p class="hint">New opens a menu of starter models, including a sector horizon scan.</p>
     </div>
 
     <div class="block">
