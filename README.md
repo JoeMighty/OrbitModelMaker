@@ -23,6 +23,7 @@ reading of the same idea:
 |---|---|
 | Blank model | Four rings, one group, nothing placed |
 | Community orbit | Members, partners and volunteers around a group |
+| Sector horizon scan | Now, five years and ten years, with signals clustered by theme |
 | Product and customers | Accounts by how much they actually use the product |
 | Brand and audience | Advocates out to people who have merely heard of you |
 | Project stakeholders | Who decides, who influences, who is only told |
@@ -43,7 +44,72 @@ edit.
 - Vector PDF export, so an A0 print stays sharp and the file stays small
 - JSON backup and restore, so you can move your models between browsers
 - Several models side by side, switched from the dropdown
-- Seven starting points, from blank to six worked examples
+- Eight starting points, from blank to seven worked examples
+- Up to five names credited on the map
+- A font for each role: headings, subheadings, body and captions
+- An optional image in the top corner, a logo or a group mark
+- Items in and out as CSV, so a group can draft in a shared spreadsheet
+
+## Horizon scanning with the Orbit
+
+The rings do not have to mean closeness. For a horizon scan, use them as time:
+Now, five years, ten years. Signals go in the ring where they start to matter,
+and groups become your themes, so the colour of a dot tells you which theme it
+belongs to. The Sector horizon scan template is set up that way already, with
+three rings and five themes.
+
+A workable order for a group:
+
+1. Start from the Sector horizon scan template and rename the centre to your
+   sector or discipline.
+2. Agree your themes, and set them up as groups with a colour each.
+3. Each person researches a horizon or a theme and adds their signals to a
+   shared spreadsheet, one row per signal.
+4. Download the CSV from the app to get the right column headings, fill it in
+   together, then load it back.
+5. Drag the dots until the clustering reads the way you want it to.
+6. Add your names, pick a design, export the PDF at the size you need.
+
+Keep the signal labels short. Anything over about 48 characters is trimmed on
+the map, so put the detail and the source in your own notes rather than in the
+label.
+
+## Items as a spreadsheet
+
+Download CSV gives you this model's items. If a model has no items yet, you get
+an example file with the right ring and group names already in it, so it doubles
+as a template to start from.
+
+```
+label,ring,group
+AI in daily workflows,Now,Technology
+Portfolio over CV,Five years,Skills and roles
+Four day week,3,Ways of working
+```
+
+- `label` is the only column that has to be there.
+- `ring` can be the ring name, or a number where 1 is the innermost ring. A
+  name that does not exist yet is added as a new ring, up to six.
+- `group` can be any theme name. A name that does not exist yet is added as a
+  new group with the next colour in the palette.
+- `angle` and `off` are optional. Leave them out and items are placed
+  automatically, spread around their ring.
+- Loading a CSV into a model that already has items asks whether to replace
+  them or add alongside.
+
+Up to 300 rows per file. Quoted fields and commas inside labels are handled.
+
+## Fonts and images
+
+Fonts are set per role, so headings, subheadings, body text and captions can
+differ. Three families are offered: sans, serif and mono. These are the families
+every PDF reader has built in, so an exported file looks the same on any machine
+without embedding a font file and without bloating the page.
+
+An image can be placed in the top left corner, for a logo or a group mark. PNG,
+JPEG and WEBP are accepted. The picture is scaled down to 512 pixels before it
+is stored, because browser storage is small, and it is embedded in the PDF as an
+image while everything else stays vector.
 
 ## Run it locally
 
@@ -72,7 +138,7 @@ subpath such as `https://yourname.github.io/orbit-maker/`.
 ## Where your data lives
 
 Everything is saved in your browser's localStorage, under the key
-`orbit-maker:v1`. Nothing is uploaded anywhere. That means:
+`orbit-maker:v1`, images included. Nothing is uploaded anywhere. That means:
 
 - Your models are per browser and per device, and are not shared between them.
 - Clearing site data for the page, or using a private window, removes them.

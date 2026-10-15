@@ -19,14 +19,26 @@
   var MIN_RINGS = 2;
   var MAX_RINGS = 6;
 
+  var MAX_NAMES = 5;
+  var MAX_CSV_ROWS = 300;
+
   /* Fonts must map to the built in PDF fonts for export. svg2pdf matches the
      family against the jsPDF font list, which is lower case, so these names are
-     lower case too. The screen preview gets a fallback stack instead. */
-  var STACK = {
-    helvetica: "Helvetica, Arial, sans-serif",
-    times: "Times New Roman, Times, serif",
-    courier: "Courier New, Courier, monospace"
+     lower case too. The screen preview gets a fallback stack instead. Only these
+     three families exist in every PDF reader without embedding a font file. */
+  var FONTS = {
+    helvetica: { label: "Sans", stack: "Helvetica, Arial, sans-serif" },
+    times: { label: "Serif", stack: "Times New Roman, Times, serif" },
+    courier: { label: "Mono", stack: "Courier New, Courier, monospace" }
   };
+
+  /* Which pieces of text each font choice covers. */
+  var ROLES = [
+    { key: "heading", label: "Headings", note: "Title and centre" },
+    { key: "subheading", label: "Subheadings", note: "Subtitle" },
+    { key: "body", label: "Body", note: "Item labels" },
+    { key: "caption", label: "Captions", note: "Rings, legend, names" }
+  ];
 
   var THEMES = {
     classic: {
@@ -175,6 +187,21 @@
     m.orientation = raw.orientation === "landscape" ? "landscape" : "portrait";
     m.labelSize = Math.round(clamp(num(raw.labelSize, 18), 12, 30));
 
+    m.names = (Array.isArray(raw.names) ? raw.names : [])
+      .filter(function (x) { return typeof x === "string" && x.trim(); })
+      .map(function (x) { return x.trim().slice(0, 40); })
+      .slice(0, MAX_NAMES);
+
+    var rf = (raw.fonts && typeof raw.fonts === "object") ? raw.fonts : {};
+    m.fonts = {};
+    ROLES.forEach(function (r) { m.fonts[r.key] = FONTS[rf[r.key]] ? rf[r.key] : ""; });
+
+    /* Only raster data URIs. An SVG data URI can carry script, and the PDF
+       library cannot rasterise one anyway. */
+    m.logo = (typeof raw.logo === "string" &&
+      /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(raw.logo) &&
+      raw.logo.length < 2500000) ? raw.logo : "";
+
     var rings = Array.isArray(raw.rings) ? raw.rings.map(function (r) { return str(r, "Ring", 40); }) : [];
     if (rings.length < MIN_RINGS) rings = ["Core", "Active", "Casual", "Observers"];
     m.rings = rings.slice(0, MAX_RINGS);
@@ -246,6 +273,29 @@
           ["Weekly regulars", 1, 0], ["Local partner org", 1, 1], ["Event hosts", 1, 2],
           ["Newsletter readers", 2, 0], ["Funding body", 2, 1],
           ["Lapsed members", 3, 0], ["Local press", 3, 1]
+        ]);
+      }
+    },
+    {
+      key: "horizon",
+      name: "Sector horizon scan",
+      blurb: "Now, five years, ten years, with signals clustered by theme",
+      build: function () {
+        return seeded({
+          title: "Sector Orbit Map",
+          subtitle: "Horizon scan: what is here now, next, and later",
+          center: "Our sector", design: "mono", orientation: "portrait", labelSize: 17,
+          rings: ["Now", "Five years", "Ten years"],
+          groups: [["Technology", "#2d9cdb"], ["Skills and roles", "#e4572e"],
+                   ["Ways of working", "#27ae60"], ["Business models", "#9b51e0"],
+                   ["Policy and ethics", "#f5a623"]]
+        }, [
+          ["AI in daily workflows", 0, 0], ["Hybrid studio weeks", 0, 2],
+          ["Freelance first teams", 0, 3], ["Clients building in house", 0, 3],
+          ["Real time production", 1, 0], ["Portfolio over CV", 1, 1],
+          ["Micro credentials", 1, 1], ["Sustainability reporting", 1, 4],
+          ["Synthetic media norms", 2, 0], ["Four day week", 2, 2],
+          ["Studio co ops", 2, 3], ["Regulated AI use", 2, 4]
         ]);
       }
     },
@@ -438,7 +488,8 @@
     return null;
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage blocked, memory only */ }
+    try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+    catch (e) { return false; }   /* storage blocked or full, carry on in memory */
   }
   function load() {
     var raw = null, o, list;
@@ -483,7 +534,14 @@
 
   function buildSVG(model, screen) {
     var th = THEMES[model.design] || THEMES.classic;
-    var font = screen ? (STACK[th.font] || STACK.helvetica) : th.font;
+    /* Each role falls back to the design's own font until it is set. */
+    function fam(role) {
+      var k = (model.fonts && FONTS[model.fonts[role]]) ? model.fonts[role] : th.font;
+      if (!FONTS[k]) k = "helvetica";
+      return screen ? FONTS[k].stack : k;
+    }
+    var f = { head: fam("heading"), sub: fam("subheading"), body: fam("body"), cap: fam("caption") };
+    var font = f.body;
     var g = geom(model);
     var b = bands(model);
     var p = [], i, k, a, r;
@@ -520,12 +578,12 @@
     if (cmax) csize = clamp((b.r0 * 1.75) / (cmax * 0.56), 11, 22);   /* keep it inside the disc */
     csize = Math.round(csize * 10) / 10;
     p.push(block(cl, g.cx, g.cy, csize * 1.18,
-      { size: csize, font: font, fill: th.centerText, anchor: "middle", weight: "bold" }));
+      { size: csize, font: f.head, fill: th.centerText, anchor: "middle", weight: "bold" }));
 
     /* ring names on the top axis, at each band middle */
     for (i = 0; i < b.n; i++) {
       r = b.r0 + (i + 0.5) * b.bw;
-      p.push(tx(g.cx, g.cy - r + 5, model.rings[i], { size: 14, font: font, fill: th.muted, anchor: "middle" }));
+      p.push(tx(g.cx, g.cy - r + 5, model.rings[i], { size: 14, font: f.cap, fill: th.muted, anchor: "middle" }));
     }
 
     /* items */
@@ -558,42 +616,61 @@
         : "<g>" + s + "</g>");
     });
 
-    /* header and legend */
-    p.push(g.land ? headLandscape(model, th, font, g) : headPortrait(model, th, font, g));
+    /* optional image, top left in both orientations */
+    if (model.logo) {
+      var box = g.land ? 104 : 88;
+      p.push('<image href="' + esc(model.logo) + '" xlink:href="' + esc(model.logo) + '" x="70" y="' +
+        (g.land ? 62 : 56) + '" width="' + box + '" height="' + box + '" preserveAspectRatio="xMidYMid meet"/>');
+    }
 
-    return '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 ' + g.W + " " + g.H +
+    /* header and legend */
+    p.push(g.land ? headLandscape(model, th, f, g) : headPortrait(model, th, f, g));
+
+    return '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 ' + g.W + " " + g.H +
       '" width="' + g.W + '" height="' + g.H + '"' +
       (screen ? ' preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:100%;touch-action:none"' : "") +
       ">" + p.join("") + "</svg>";
   }
 
-  function headPortrait(model, th, font, g) {
-    var p = [], t = wrapText(model.title, 30, 2), lh = 57, y = 105;
+  function headPortrait(model, th, f, g) {
+    /* A logo sits top left, so the centred title wraps earlier to clear it. */
+    var p = [], t = wrapText(model.title, model.logo ? 22 : 30, 2), lh = 57, y = 105;
     if (t.length) {
-      p.push(block(t, g.W / 2, y, lh, { size: 52, font: font, fill: th.text, anchor: "middle", weight: "bold" }));
+      p.push(block(t, g.W / 2, y, lh, { size: 52, font: f.head, fill: th.text, anchor: "middle", weight: "bold" }));
       y = y + ((t.length - 1) * lh) / 2 + 26;
     }
     var sub = wrapText(model.subtitle, 56, 2);
     if (sub.length) {
-      p.push(block(sub, g.W / 2, y + 28 + ((sub.length - 1) * 29) / 2, 29,
-        { size: 24, font: font, fill: th.muted, anchor: "middle" }));
+      y = y + 28 + ((sub.length - 1) * 29) / 2;
+      p.push(block(sub, g.W / 2, y, 29, { size: 24, font: f.sub, fill: th.muted, anchor: "middle" }));
+      y = y + ((sub.length - 1) * 29) / 2;
     }
-    p.push(legend(model, th, font, { x: g.W / 2, bottom: g.H - 80, width: g.W - 120, center: true }));
+    var who = wrapText(model.names.join(", "), 62, 2);
+    if (who.length) {
+      p.push(block(who, g.W / 2, y + 30 + ((who.length - 1) * 23) / 2, 23,
+        { size: 19, font: f.cap, fill: th.muted, anchor: "middle" }));
+    }
+    p.push(legend(model, th, f.cap, { x: g.W / 2, bottom: g.H - 80, width: g.W - 120, center: true }));
     return p.join("");
   }
 
-  function headLandscape(model, th, font, g) {
-    var p = [], t = wrapText(model.title, 17, 4), lh = 48, y = 190, i;
+  function headLandscape(model, th, f, g) {
+    var p = [], t = wrapText(model.title, 17, 4), lh = 48, y = model.logo ? 230 : 190, i;
     for (i = 0; i < t.length; i++) {
-      p.push(tx(70, y + i * lh, t[i], { size: 44, font: font, fill: th.text, anchor: "start", weight: "bold" }));
+      p.push(tx(70, y + i * lh, t[i], { size: 44, font: f.head, fill: th.text, anchor: "start", weight: "bold" }));
     }
     if (t.length) y += (t.length - 1) * lh + 46;
     var sub = wrapText(model.subtitle, 40, 3);
     for (i = 0; i < sub.length; i++) {
-      p.push(tx(70, y + i * 27, sub[i], { size: 22, font: font, fill: th.muted, anchor: "start" }));
+      p.push(tx(70, y + i * 27, sub[i], { size: 22, font: f.sub, fill: th.muted, anchor: "start" }));
     }
-    if (sub.length) y += (sub.length - 1) * 27 + 54;
-    p.push(legend(model, th, font, { x: 70, top: y, width: 440, center: false }));
+    if (sub.length) y += (sub.length - 1) * 27 + 44;
+    var who = wrapText(model.names.join(", "), 46, 3);
+    for (i = 0; i < who.length; i++) {
+      p.push(tx(70, y + i * 24, who[i], { size: 19, font: f.cap, fill: th.muted, anchor: "start" }));
+    }
+    if (who.length) y += (who.length - 1) * 24 + 46;
+    p.push(legend(model, th, f.cap, { x: 70, top: y, width: 440, center: false }));
     return p.join("");
   }
 
@@ -643,7 +720,9 @@
     itemList = $("#itemList"), newLabel = $("#newLabel"), newRing = $("#newRing"),
     newGroup = $("#newGroup"), paperSize = $("#paperSize"), exportInfo = $("#exportInfo"),
     pdfBtn = $("#pdfBtn"), importFile = $("#importFile"), labelSizeVal = $("#labelSizeVal"),
-    newBtn = $("#newBtn"), newMenu = $("#newMenu");
+    newBtn = $("#newBtn"), newMenu = $("#newMenu"), nameList = $("#nameList"),
+    nameCount = $("#nameCount"), fontGrid = $("#fontGrid"), logoFile = $("#logoFile"),
+    csvFile = $("#csvFile"), csvNote = $("#csvNote");
 
   /* The New button opens a list of starter models. Blank stays the first entry,
      so the quickest path is still one click and one more. */
@@ -749,6 +828,29 @@
       }).join("")
       : '<p class="hint">No items yet. Add one above.</p>';
 
+    nameList.innerHTML = m.names.map(function (n, i) {
+      return '<div class="row name"><input type="text" value="' + esc(n) + '" data-f="name" data-i="' + i +
+        '" maxlength="40" autocomplete="off" aria-label="Name ' + (i + 1) + '">' +
+        '<button type="button" class="icon" data-act="del-name" data-i="' + i +
+        '" aria-label="Remove name" title="Remove name">x</button></div>';
+    }).join("");
+    nameCount.textContent = m.names.length + " of " + MAX_NAMES;
+    panel.querySelector('[data-act="add-name"]').disabled = m.names.length >= MAX_NAMES;
+
+    fontGrid.innerHTML = ROLES.map(function (r) {
+      var sel = m.fonts[r.key] || "";
+      var opts = '<option value=""' + (sel ? "" : " selected") + ">Match design</option>" +
+        Object.keys(FONTS).map(function (k) {
+          return '<option value="' + k + '"' + (sel === k ? " selected" : "") + ">" + esc(FONTS[k].label) + "</option>";
+        }).join("");
+      return '<div><label for="font-' + r.key + '">' + esc(r.label) + "</label>" +
+        '<select id="font-' + r.key + '" data-f="font" data-r="' + r.key +
+        '" title="' + esc(r.note) + '">' + opts + "</select></div>";
+    }).join("");
+
+    panel.querySelector('[data-act="del-logo"]').disabled = !m.logo;
+    panel.querySelector('[data-act="pick-logo"]').textContent = m.logo ? "Replace image" : "Choose image";
+
     panel.querySelector('[data-act="add-ring"]').disabled = m.rings.length >= MAX_RINGS;
 
     updateExportInfo();
@@ -822,15 +924,21 @@
       it = itm(m, t.getAttribute("data-id"));
       if (!it) return;
       it.label = t.value;
+    } else if (f === "name") {
+      i = Math.round(num(t.getAttribute("data-i"), -1));
+      if (i < 0 || i >= m.names.length) return;
+      m.names[i] = t.value;
     } else return;
     save(); renderPreview();
   }
 
   function onChange(e) {
     var t = e.target, m = cur(), f, it;
-    if (t === modelSelect) { state.current = t.value; save(); renderAll(); return; }
+    if (t === modelSelect) { state.current = t.value; note(""); save(); renderAll(); return; }
     if (t === paperSize) { paper = t.value; updateExportInfo(); return; }
     if (t === importFile) { readImport(t.files && t.files[0]); t.value = ""; return; }
+    if (t === logoFile) { readLogo(t.files && t.files[0]); t.value = ""; return; }
+    if (t === csvFile) { readCSV(t.files && t.files[0]); t.value = ""; return; }
     if (!m || !t.getAttribute) return;
     f = t.getAttribute("data-f");
     if (f === "iring") {
@@ -839,6 +947,12 @@
     } else if (f === "igroup") {
       it = itm(m, t.getAttribute("data-id"));
       if (it && grp(m, t.value)) { it.group = t.value; save(); renderPreview(); }
+    } else if (f === "font") {
+      var role = t.getAttribute("data-r");
+      if (m.fonts.hasOwnProperty(role)) {
+        m.fonts[role] = FONTS[t.value] ? t.value : "";
+        save(); renderPreview();
+      }
     }
   }
 
@@ -929,6 +1043,38 @@
       case "orient":
         m.orientation = b.getAttribute("data-v") === "landscape" ? "landscape" : "portrait";
         save(); renderAll();
+        break;
+
+      case "add-name":
+        if (m.names.length >= MAX_NAMES) return;
+        m.names.push("");
+        save(); renderForm(); renderPreview();
+        n = nameList.querySelector(".row.name:last-child input");
+        if (n) n.focus();
+        break;
+
+      case "del-name":
+        i = Math.round(num(b.getAttribute("data-i"), -1));
+        if (i < 0 || i >= m.names.length) return;
+        m.names.splice(i, 1);
+        save(); renderAll();
+        break;
+
+      case "pick-logo":
+        logoFile.click();
+        break;
+
+      case "del-logo":
+        m.logo = "";
+        save(); renderAll();
+        break;
+
+      case "export-csv":
+        exportCSV();
+        break;
+
+      case "import-csv":
+        csvFile.click();
         break;
 
       case "export-pdf":
@@ -1080,20 +1226,217 @@
      JSON backup
      ------------------------------------------------------------------ */
 
-  function exportJSON() {
+  function download(text, type, name) {
     try {
-      var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
+      var url = URL.createObjectURL(new Blob([text], { type: type }));
       var a = document.createElement("a");
       a.href = url;
-      a.download = "orbit-maker-backup.json";
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       a.parentNode.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      return true;
     } catch (e) {
-      window.alert("The backup file could not be created in this browser.");
+      window.alert("The file could not be created in this browser.");
+      return false;
     }
+  }
+
+  function exportJSON() {
+    download(JSON.stringify(state, null, 2), "application/json", "orbit-maker-backup.json");
+  }
+
+  /* ------------------------------------------------------------------
+     items as a spreadsheet
+     ------------------------------------------------------------------ */
+
+  function csvCell(v) {
+    var s = String(v == null ? "" : v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function exportCSV() {
+    var m = cur();
+    if (!m) return;
+    var rows = [["label", "ring", "group"]];
+    if (m.items.length) {
+      m.items.forEach(function (it) {
+        var gr = grp(m, it.group);
+        rows.push([it.label, m.rings[Math.round(clamp(it.ring, 0, m.rings.length - 1))], gr ? gr.name : ""]);
+      });
+    } else {
+      /* an empty model still downloads something worth filling in */
+      m.rings.forEach(function (r, i) {
+        rows.push(["Example signal " + (i + 1), r, m.groups[i % m.groups.length].name]);
+      });
+    }
+    if (download(rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n") + "\r\n",
+      "text/csv;charset=utf-8", slug(m.title) + "-items.csv")) {
+      note(m.items.length ? "Downloaded " + m.items.length + " items." : "Downloaded an example file to fill in.");
+    }
+  }
+
+  /* Quoted fields, doubled quotes inside them, CR, LF or CRLF line ends. */
+  function parseCSV(text) {
+    var rows = [], row = [], cell = "", q = false, i, c;
+    text = String(text).replace(/^\uFEFF/, "");
+    for (i = 0; i < text.length; i++) {
+      c = text.charAt(i);
+      if (q) {
+        if (c !== '"') { cell += c; }
+        else if (text.charAt(i + 1) === '"') { cell += '"'; i++; }
+        else q = false;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cell); cell = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text.charAt(i + 1) === "\n") i++;
+        row.push(cell); cell = ""; rows.push(row); row = [];
+      } else cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) {
+      return r.some(function (v) { return String(v).trim() !== ""; });
+    });
+  }
+
+  function colIndex(head, names) {
+    var i, j;
+    for (i = 0; i < head.length; i++) for (j = 0; j < names.length; j++) if (head[i] === names[j]) return i;
+    return -1;
+  }
+
+  function note(msg) { if (csvNote) csvNote.textContent = msg; }
+
+  function readCSV(file) {
+    if (!file) return;
+    var fr = new FileReader();
+    fr.onerror = function () { window.alert("That file could not be read."); };
+    fr.onload = function () { importCSV(String(fr.result)); };
+    fr.readAsText(file);
+  }
+
+  function importCSV(text) {
+    var m = cur();
+    if (!m) return;
+    var rows = parseCSV(text);
+    if (rows.length < 2) {
+      window.alert("That file has no rows under the header. The first line should read: label,ring,group");
+      return;
+    }
+    var head = rows[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    var iL = colIndex(head, ["label", "name", "item", "signal"]);
+    var iR = colIndex(head, ["ring", "horizon", "level"]);
+    var iG = colIndex(head, ["group", "theme", "cluster"]);
+    var iA = colIndex(head, ["angle"]);
+    var iO = colIndex(head, ["off", "offset"]);
+    if (iL < 0) {
+      window.alert("The file needs a column called label. The first line should read: label,ring,group");
+      return;
+    }
+
+    var newRings = 0, newGroups = 0, added = 0;
+
+    function ringFor(v) {
+      var sv = String(v == null ? "" : v).trim(), i;
+      if (!sv) return 0;
+      if (/^[0-9]+$/.test(sv)) return Math.round(clamp(parseFloat(sv) - 1, 0, m.rings.length - 1));
+      for (i = 0; i < m.rings.length; i++) if (m.rings[i].trim().toLowerCase() === sv.toLowerCase()) return i;
+      if (m.rings.length < MAX_RINGS) { m.rings.push(sv.slice(0, 40)); newRings++; return m.rings.length - 1; }
+      return m.rings.length - 1;
+    }
+
+    function groupFor(v) {
+      var sv = String(v == null ? "" : v).trim(), i, ng;
+      if (!sv) return m.groups[0].id;
+      for (i = 0; i < m.groups.length; i++) if (m.groups[i].name.trim().toLowerCase() === sv.toLowerCase()) return m.groups[i].id;
+      ng = { id: uid(), name: sv.slice(0, 40), color: PALETTE[m.groups.length % PALETTE.length] };
+      m.groups.push(ng);
+      newGroups++;
+      return ng.id;
+    }
+
+    var body = rows.slice(1, 1 + MAX_CSV_ROWS);
+    var over = rows.length - 1 - body.length;
+    var replace = m.items.length
+      ? window.confirm("Replace the " + m.items.length + " items already in this model?\n\n" +
+        "OK replaces them. Cancel keeps them and adds the new rows.")
+      : true;
+    if (replace) m.items = [];
+
+    body.forEach(function (r) {
+      var label = String(r[iL] == null ? "" : r[iL]).trim();
+      if (!label) return;
+      var ring = iR < 0 ? 0 : ringFor(r[iR]);
+      var it = {
+        id: uid(), label: label.slice(0, 60), ring: ring, group: groupFor(iG < 0 ? "" : r[iG]),
+        angle: 0, off: 0.5
+      };
+      if (iO >= 0 && String(r[iO] == null ? "" : r[iO]).trim() !== "") it.off = clamp(num(r[iO], 0.5), 0, 1);
+      it.angle = (iA >= 0 && String(r[iA] == null ? "" : r[iA]).trim() !== "")
+        ? ((num(r[iA], 0) % 360) + 360) % 360
+        : pickAngle(m, ring);
+      m.items.push(it);
+      added++;
+    });
+
+    if (!added) { window.alert("No rows with a label were found in that file."); return; }
+    m.items.forEach(function (it) { it.ring = Math.round(clamp(it.ring, 0, m.rings.length - 1)); });
+    save();
+    renderAll();
+    note("Loaded " + added + " item" + (added === 1 ? "" : "s") +
+      (newRings ? ", added " + newRings + " ring" + (newRings === 1 ? "" : "s") : "") +
+      (newGroups ? ", added " + newGroups + " group" + (newGroups === 1 ? "" : "s") : "") +
+      (over > 0 ? ". " + over + " row" + (over === 1 ? " was" : "s were") + " past the limit of " + MAX_CSV_ROWS + " and ignored" : "") + ".");
+  }
+
+  /* ------------------------------------------------------------------
+     image
+     ------------------------------------------------------------------ */
+
+  function readLogo(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      window.alert("Use a PNG, JPEG or WEBP image.");
+      return;
+    }
+    var fr = new FileReader();
+    fr.onerror = function () { window.alert("That image could not be read."); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { window.alert("That image could not be read."); };
+      img.onload = function () {
+        /* Scale down before storing. A page only ever draws it about 100 units
+           wide, and browser storage is small. */
+        var max = 512, sc = Math.min(1, max / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * sc)), h = Math.max(1, Math.round(img.height * sc));
+        var cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        try { cv.getContext("2d").drawImage(img, 0, 0, w, h); }
+        catch (e) { window.alert("That image could not be read."); return; }
+        var data = "";
+        try { data = cv.toDataURL("image/png"); } catch (e2) { data = ""; }
+        if (!data || data.length > 900000) {
+          try { data = cv.toDataURL("image/jpeg", 0.82); } catch (e3) { data = ""; }
+        }
+        if (!data || data.length > 1600000) {
+          window.alert("That image is too detailed to store. Try a smaller or simpler one.");
+          return;
+        }
+        var m = cur();
+        if (!m) return;
+        var was = m.logo;
+        m.logo = data;
+        if (!save()) {
+          m.logo = was;
+          save();
+          window.alert("There is not enough room left in this browser's storage for that image. Try a smaller one, or delete a model you no longer need.");
+        }
+        renderAll();
+      };
+      img.src = String(fr.result);
+    };
+    fr.readAsDataURL(file);
   }
 
   function readImport(file) {

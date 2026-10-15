@@ -40,6 +40,19 @@
       <input id="fSub" type="text" data-bind="subtitle" maxlength="160" autocomplete="off">
       <label class="lab" for="fCenter">Centre label</label>
       <input id="fCenter" type="text" data-bind="center" maxlength="40" autocomplete="off">
+
+      <label class="lab">Names <span class="val" id="nameCount"></span></label>
+      <p class="hint">Credited under the subtitle. Up to five.</p>
+      <div id="nameList" class="list"></div>
+      <button type="button" data-act="add-name">Add name</button>
+
+      <label class="lab">Image</label>
+      <p class="hint">A logo or mark, placed in the top left corner.</p>
+      <div class="btns">
+        <button type="button" data-act="pick-logo">Choose image</button>
+        <button type="button" data-act="del-logo">Remove</button>
+      </div>
+      <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     </div>
 
     <div class="block">
@@ -52,6 +65,10 @@
       </div>
       <label class="lab" for="fLabelSize">Label size <span id="labelSizeVal" class="val"></span></label>
       <input id="fLabelSize" type="range" min="12" max="30" step="1" data-bind="labelSize">
+
+      <label class="lab">Fonts</label>
+      <div id="fontGrid" class="fonts"></div>
+      <p class="hint">Three families print without embedding a font file, so a PDF looks the same everywhere.</p>
     </div>
 
     <div class="block">
@@ -97,6 +114,15 @@
         <button type="button" data-act="import-json">Load backup</button>
       </div>
       <input id="importFile" type="file" accept="application/json,.json" hidden>
+
+      <label class="lab">Items as a spreadsheet</label>
+      <p class="hint">Download gives you this model's items, or a filled in example to start from. Columns: label, ring, group.</p>
+      <div class="btns">
+        <button type="button" data-act="export-csv">Download CSV</button>
+        <button type="button" data-act="import-csv">Load CSV</button>
+      </div>
+      <input id="csvFile" type="file" accept=".csv,text/csv,text/plain" hidden>
+      <p id="csvNote" class="hint" role="status"></p>
       <p class="hint">Your models are stored in this browser only.</p>
     </div>
 
