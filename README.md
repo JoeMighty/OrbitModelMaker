@@ -13,6 +13,26 @@ level of involvement, for example Core, Active, Casual and Observers. Items sit 
 the ring that matches how close they are, and their colour shows which group they
 belong to.
 
+## Starter models
+
+New opens a menu of ready made models, so you can start from something rather
+than an empty page. Each one uses a different design, and each is a different
+reading of the same idea:
+
+| Template | What it shows |
+|---|---|
+| Blank model | Four rings, one group, nothing placed |
+| Community orbit | Members, partners and volunteers around a group |
+| Product and customers | Accounts by how much they actually use the product |
+| Brand and audience | Advocates out to people who have merely heard of you |
+| Project stakeholders | Who decides, who influences, who is only told |
+| Personal network | The people around you, by how often you really speak |
+| Partner ecosystem | Resellers, integrations and suppliers around a platform |
+
+Each one is a normal model once created, so rename it, repaint it and drag it
+about. The first time you open the site you get the community orbit, ready to
+edit.
+
 ## Features
 
 - Two to six rings, with your own names
@@ -23,6 +43,7 @@ belong to.
 - Vector PDF export, so an A0 print stays sharp and the file stays small
 - JSON backup and restore, so you can move your models between browsers
 - Several models side by side, switched from the dropdown
+- Seven starting points, from blank to six worked examples
 
 ## Run it locally
 

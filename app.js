@@ -227,55 +227,185 @@
     });
   }
 
-  function sample() {
-    var gs = [
-      { id: uid(), name: "Members", color: "#e4572e" },
-      { id: uid(), name: "Partners", color: "#17a398" },
-      { id: uid(), name: "Volunteers", color: "#7b61ff" }
-    ];
-    var m = {
-      id: uid(),
-      title: "Community Orbit Model",
-      subtitle: "Who is close, and who is drifting",
-      center: "Us",
-      design: "classic",
-      orientation: "portrait",
-      labelSize: 18,
-      rings: ["Core", "Active", "Casual", "Observers"],
-      groups: gs,
-      items: []
-    };
-    var seed = [
-      ["Founding team", 0, 0], ["Steering group", 0, 2],
-      ["Weekly regulars", 1, 0], ["Local partner org", 1, 1], ["Event hosts", 1, 2],
-      ["Newsletter readers", 2, 0], ["Funding body", 2, 1],
-      ["Lapsed members", 3, 0], ["Local press", 3, 1]
-    ];
-    seed.forEach(function (s) {
-      m.items.push({ id: uid(), label: s[0], ring: s[1], group: gs[s[2]].id, angle: pickAngle(m, s[1]), off: 0.5 });
+  /* Starter models. Each one uses a different design and a different reading of
+     the same idea: a focus at the centre, rings for closeness, colour by group. */
+  var TEMPLATES = [
+    {
+      key: "community",
+      name: "Community orbit",
+      blurb: "Members, partners and volunteers",
+      build: function () {
+        return seeded({
+          title: "Community Orbit Model",
+          subtitle: "Who is close, and who is drifting",
+          center: "Us", design: "classic", orientation: "portrait", labelSize: 18,
+          rings: ["Core", "Active", "Casual", "Observers"],
+          groups: [["Members", "#e4572e"], ["Partners", "#17a398"], ["Volunteers", "#7b61ff"]]
+        }, [
+          ["Founding team", 0, 0], ["Steering group", 0, 2],
+          ["Weekly regulars", 1, 0], ["Local partner org", 1, 1], ["Event hosts", 1, 2],
+          ["Newsletter readers", 2, 0], ["Funding body", 2, 1],
+          ["Lapsed members", 3, 0], ["Local press", 3, 1]
+        ]);
+      }
+    },
+    {
+      key: "product",
+      name: "Product and customers",
+      blurb: "Accounts by how much they use it",
+      build: function () {
+        return seeded({
+          title: "Customer Orbit",
+          subtitle: "How close each account is to the product",
+          center: "Our product", design: "midnight", orientation: "portrait", labelSize: 18,
+          rings: ["Daily", "Weekly", "Occasional", "At risk"],
+          groups: [["Enterprise", "#2d9cdb"], ["Small business", "#27ae60"], ["Individual", "#f5a623"], ["Trials", "#eb5757"]]
+        }, [
+          ["Design partners", 0, 0], ["Power teams", 0, 1],
+          ["Weekly teams", 1, 1], ["Solo subscribers", 1, 2], ["Agency accounts", 1, 0],
+          ["Monthly logins", 2, 2], ["Pilot accounts", 2, 3],
+          ["Expired trials", 3, 3], ["Quiet accounts", 3, 0]
+        ]);
+      }
+    },
+    {
+      key: "brand",
+      name: "Brand and audience",
+      blurb: "Advocates out to the merely aware",
+      build: function () {
+        return seeded({
+          title: "Audience Orbit",
+          subtitle: "From advocates to the merely aware",
+          center: "The brand", design: "solar", orientation: "portrait", labelSize: 18,
+          rings: ["Advocates", "Buyers", "Followers", "Aware"],
+          groups: [["Customers", "#c0392b"], ["Creators", "#7b61ff"], ["Press", "#17a398"], ["Community", "#2d9cdb"]]
+        }, [
+          ["Repeat buyers", 0, 0], ["Ambassadors", 0, 3],
+          ["First time buyers", 1, 0], ["Gift buyers", 1, 0], ["Collaborators", 1, 1],
+          ["Social followers", 2, 3], ["Newsletter list", 2, 0],
+          ["Trade reviewers", 3, 2], ["Local press", 3, 2]
+        ]);
+      }
+    },
+    {
+      key: "stakeholders",
+      name: "Project stakeholders",
+      blurb: "Who decides, who influences, who is told",
+      build: function () {
+        return seeded({
+          title: "Stakeholder Map",
+          subtitle: "Who decides, who influences, who is told",
+          center: "The project", design: "blueprint", orientation: "landscape", labelSize: 17,
+          rings: ["Decide", "Influence", "Affected", "Informed"],
+          groups: [["Internal", "#f5a623"], ["Customers", "#2ecc71"], ["Suppliers", "#ff6b6b"], ["Regulators", "#d7c4ff"]]
+        }, [
+          ["Exec sponsor", 0, 0], ["Ops manager", 0, 0],
+          ["Key account", 1, 1], ["Finance partner", 1, 0],
+          ["Frontline staff", 2, 0], ["Logistics partner", 2, 2], ["Support team", 2, 0],
+          ["Safety regulator", 3, 3], ["Local council", 3, 3]
+        ]);
+      }
+    },
+    {
+      key: "personal",
+      name: "Personal network",
+      blurb: "People you know, by how often you speak",
+      build: function () {
+        return seeded({
+          title: "My Orbit",
+          subtitle: "The people around me, by how often we speak",
+          center: "Me", design: "pastel", orientation: "portrait", labelSize: 19,
+          rings: ["Inner circle", "Close", "Friendly", "Distant"],
+          groups: [["Family", "#e4572e"], ["Friends", "#7b61ff"], ["Work", "#17a398"], ["Neighbours", "#f5a623"]]
+        }, [
+          ["Partner", 0, 0], ["Best friends", 0, 1],
+          ["Siblings", 1, 0], ["Book club", 1, 1], ["Team at work", 1, 2],
+          ["Old colleagues", 2, 2], ["Next door", 2, 3],
+          ["Cousins", 3, 0], ["Gym crowd", 3, 1]
+        ]);
+      }
+    },
+    {
+      key: "partners",
+      name: "Partner ecosystem",
+      blurb: "Resellers, integrations and suppliers",
+      build: function () {
+        return seeded({
+          title: "Partner Ecosystem",
+          subtitle: "Who builds on us, and how closely",
+          center: "Our platform", design: "mono", orientation: "landscape", labelSize: 17,
+          rings: ["Strategic", "Active", "Light touch", "Prospects"],
+          groups: [["Resellers", "#e4572e"], ["Integrations", "#2d9cdb"], ["Agencies", "#7b61ff"], ["Suppliers", "#27ae60"]]
+        }, [
+          ["Lead reseller", 0, 0], ["Core integration", 0, 1],
+          ["Regional partner", 1, 0], ["API partners", 1, 1], ["Design agency", 1, 2],
+          ["Pilot integrations", 2, 1], ["Hosting supplier", 2, 3],
+          ["Prospect list", 3, 0], ["Trade body", 3, 3]
+        ]);
+      }
+    }
+  ];
+
+  /* Fill in the ids and spread the items around their rings. The small variation
+     in off keeps a starter model from looking like a set of perfect circles. */
+  function seeded(base, rows) {
+    base.id = uid();
+    base.groups = base.groups.map(function (g, i) { return { id: "g" + (i + 1), name: g[0], color: g[1] }; });
+    base.items = [];
+    rows.forEach(function (r, i) {
+      base.items.push({
+        id: uid(), label: r[0], ring: r[1], group: base.groups[r[2]].id,
+        angle: pickAngle(base, r[1]), off: 0.4 + ((i * 2) % 5) * 0.05
+      });
     });
-    return m;
+    return base;
   }
+
+  function fromTemplate(key) {
+    var t = null;
+    TEMPLATES.forEach(function (x) { if (x.key === key) t = x; });
+    return t ? freshIds(normalize(t.build())) : blank();
+  }
+
+  function sample() { return fromTemplate("community"); }
 
   /* Angle that sits furthest from the items already in that ring, skipping the
      top axis where ring names are drawn. Ties are broken by moving away from the
      items in the other rings too, which keeps their labels from stacking up. */
+  /* How far from the top axis an item has to sit to clear that ring's name.
+     A tight inner ring needs a wider berth than a roomy outer one. */
+  function topGap(model, ring) {
+    var g = geom(model), b = bands(model);
+    var r = b.r0 + b.bw * (clamp(ring, 0, b.n - 1) + 0.5);
+    var half = (String(model.rings[ring] || "").length * 14 * 0.56) / 2 + 18;
+    return clamp(Math.asin(clamp(half / r, 0, 1)) * 180 / Math.PI, 10, 40);
+  }
+
   function pickAngle(model, ring) {
-    var same = [], other = [];
+    var same = [], other = [], gap = topGap(model, ring), seed;
     model.items.forEach(function (it) { (it.ring === ring ? same : other).push(it.angle); });
-    if (!same.length) return (ring * 47 + 30) % 360;
+    if (!same.length) {
+      seed = (ring * 47 + 30) % 360;
+      if (Math.abs(angDiff(seed, -90)) < gap) seed = (270 + gap + 8) % 360;
+      return seed;
+    }
 
     function nearest(a, list) {
       var d = 180, i;
       for (i = 0; i < list.length; i++) d = Math.min(d, Math.abs(angDiff(a, list[i])));
       return d;
     }
-    var cand = [], a, top = -1;
+    var cand = [], all = [], a, top = -1;
     for (a = 0; a < 360; a += 3) {
-      if (Math.abs(angDiff(a, -90)) < 10) continue;
       var d = nearest(a, same);
+      all.push({ a: a, d: d });
+      if (Math.abs(angDiff(a, -90)) < gap) continue;
       cand.push({ a: a, d: d });
       if (d > top) top = d;
+    }
+    if (!cand.length) {                               /* no room outside the names */
+      cand = all;
+      cand.forEach(function (c) { if (c.d > top) top = c.d; });
     }
     var best = null;
     cand.forEach(function (c) {
@@ -512,7 +642,25 @@
     designGrid = $("#designGrid"), ringList = $("#ringList"), groupList = $("#groupList"),
     itemList = $("#itemList"), newLabel = $("#newLabel"), newRing = $("#newRing"),
     newGroup = $("#newGroup"), paperSize = $("#paperSize"), exportInfo = $("#exportInfo"),
-    pdfBtn = $("#pdfBtn"), importFile = $("#importFile"), labelSizeVal = $("#labelSizeVal");
+    pdfBtn = $("#pdfBtn"), importFile = $("#importFile"), labelSizeVal = $("#labelSizeVal"),
+    newBtn = $("#newBtn"), newMenu = $("#newMenu");
+
+  /* The New button opens a list of starter models. Blank stays the first entry,
+     so the quickest path is still one click and one more. */
+  function buildMenu() {
+    newMenu.innerHTML =
+      '<button type="button" role="menuitem" data-act="new-model" data-v="blank">' +
+      '<span class="mt">Blank model</span><span class="mb">Four rings, one group, no items</span></button><hr>' +
+      TEMPLATES.map(function (t) {
+        return '<button type="button" role="menuitem" data-act="new-model" data-v="' + esc(t.key) + '">' +
+          '<span class="mt">' + esc(t.name) + '</span><span class="mb">' + esc(t.blurb) + '</span></button>';
+      }).join("");
+  }
+
+  function setMenu(open) {
+    newMenu.hidden = !open;
+    newBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
 
   function renderPreview() {
     var m = cur();
@@ -699,8 +847,12 @@
     if (!b || b.disabled) return;
     var act = b.getAttribute("data-act"), m = cur(), i, id, x, gone, keep, used, n;
 
+    if (act === "new-menu") { setMenu(newMenu.hidden); return; }
     if (act === "new-model") {
-      x = blank(); state.models.push(x); state.current = x.id; save(); renderAll(); return;
+      setMenu(false);
+      id = b.getAttribute("data-v");
+      x = (id && id !== "blank") ? fromTemplate(id) : blank();
+      state.models.push(x); state.current = x.id; save(); renderAll(); return;
     }
     if (!m) return;
 
@@ -979,7 +1131,16 @@
       state.current = state.models[0].id;
       save();
     }
+    buildMenu();
     panel.addEventListener("click", onClick);
+    document.addEventListener("click", function (e) {
+      if (newMenu.hidden) return;
+      if (e.target.closest && e.target.closest(".menuwrap")) return;
+      setMenu(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !newMenu.hidden) { setMenu(false); newBtn.focus(); }
+    });
     panel.addEventListener("input", onInput);
     panel.addEventListener("change", onChange);
     newLabel.addEventListener("keydown", function (e) {
